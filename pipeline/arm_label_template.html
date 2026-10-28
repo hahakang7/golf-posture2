@@ -313,8 +313,9 @@ document.getElementById("export").onclick = () => {
   const data = buildExport();
   const blob = new Blob([JSON.stringify(data, null, 1)], { type: "application/json" });
   const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
-  a.download = "arm_labels.json"; document.body.append(a); a.click(); a.remove();
-  toast(`${data.tasks.length}개 프레임 저장 (arm_labels.json)`);
+  const fileName = TASKS.length && TASKS.every(t => t.video.startsWith("pro")) ? "arm_labels_pro.json" : "arm_labels.json";
+  a.download = fileName; document.body.append(a); a.click(); a.remove();
+  toast(`${data.tasks.length}개 프레임 저장 (${fileName})`);
 };
 document.getElementById("import").onclick = () => document.getElementById("importFile").click();
 document.getElementById("importFile").onchange = async e => {

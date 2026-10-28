@@ -87,19 +87,29 @@ def _frame_data_url(video_path: Path, frame_index: int, max_side: int) -> tuple[
     return "data:image/jpeg;base64," + base64.b64encode(encoded.tobytes()).decode("ascii"), scale
 
 
-def build_tasks(videos: Sequence[str], videos_dir: Path, results_dir: Path, max_side: int) -> list[dict[str, Any]]:
+def build_tasks_from_items(
+    items: Sequence[tuple[str, Path, int, str, int]], max_side: int
+) -> list[dict[str, Any]]:
+    """Tasks for (name, video path, event index, event name, frame index) items."""
     tasks = []
-    for name in videos:
-        video_path = videos_dir / f"{name}.mp4"
-        frames = event_frames_from_result(results_dir / name / f"{name}_result.json")
-        size = video_size(video_path)
-        for event_index, frame_index in enumerate(frames):
-            rendered = _frame_data_url(video_path, frame_index, max_side)
-            if rendered is None:
-                raise RuntimeError(f"could not read frame {frame_index} of {video_path}")
-            image, scale = rendered
-            tasks.append(label_task(name, event_index, EVENT_NAMES[event_index], frame_index, size, scale, image))
+    for name, video_path, event_index, event_name, frame_index in items:
+        rendered = _frame_data_url(video_path, frame_index, max_side)
+        if rendered is None:
+            raise RuntimeError(f"could not read frame {frame_index} of {video_path}")
+        image, scale = rendered
+        tasks.append(label_task(name, event_index, event_name, frame_index, video_size(video_path), scale, image))
     return tasks
+
+
+def build_tasks(videos: Sequence[str], videos_dir: Path, results_dir: Path, max_side: int) -> list[dict[str, Any]]:
+    items = []
+    for name in videos:
+        frames = event_frames_from_result(results_dir / name / f"{name}_result.json")
+        items += [
+            (name, videos_dir / f"{name}.mp4", event_index, EVENT_NAMES[event_index], frame_index)
+            for event_index, frame_index in enumerate(frames)
+        ]
+    return build_tasks_from_items(items, max_side)
 
 
 def parse_args() -> argparse.Namespace:
