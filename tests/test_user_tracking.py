@@ -90,6 +90,29 @@ class TestBuildUserEvents:
         assert event["features"]["trail_elbow_angle"] is None
         assert event["features"]["shoulder_tilt"] is None
 
+    def test_smooth_arm_motion_is_not_flagged_as_a_jump(self):
+        event = _events([_frame(), _frame(), _frame()], [1])[0]
+
+        assert event["qc"]["trail"]["jump"] is False
+        assert event["features"]["trail_elbow_angle"] == pytest.approx(90.0)
+
+    def test_single_frame_glitch_in_one_arm_makes_that_elbow_unavailable(self):
+        glitch = _frame()
+        glitch["RIGHT_WRIST"] = _joint(90, 40, 0.9, 0.1 + 0.22, 0.25, 0.0)  # wrist leaps 40 px; torso is 50 px
+
+        event = _events([_frame(), glitch, _frame()], [1])[0]
+
+        assert event["qc"]["trail"]["jump"] is True
+        assert event["features"]["trail_elbow_angle"] is None
+        assert event["qc"]["lead"]["jump"] is False
+        assert event["features"]["lead_elbow_angle"] == pytest.approx(180.0)
+
+    def test_jump_cannot_be_measured_at_the_first_frame_so_nothing_is_flagged(self):
+        event = _events([_frame(), _frame()], [0])[0]
+
+        assert event["qc"]["trail"]["jump"] is False
+        assert event["features"]["trail_elbow_angle"] == pytest.approx(90.0)
+
     def test_event_past_end_is_fully_unavailable(self):
         event = _events([_frame()], [9])[0]
 

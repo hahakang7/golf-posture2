@@ -19,6 +19,9 @@ from typing import Mapping, Sequence
 Joint = Sequence[float]  # (px, py, visibility, wx, wy, wz)
 Frame = Mapping[str, Joint]
 
+# Joint-jump threshold in torso lengths. Chosen leave-one-video-out against hand labels (qc_evaluate): picked
+# as 0.2 in all six folds; caught 8/12 wrong arms at 2 false alarms on 65 correct ones. Small sample.
+JUMP_THRESHOLD = 0.2
 MIN_NEIGHBOURS = 2
 TORSO_JOINTS = ("LEFT_SHOULDER", "RIGHT_SHOULDER", "LEFT_HIP", "RIGHT_HIP")
 

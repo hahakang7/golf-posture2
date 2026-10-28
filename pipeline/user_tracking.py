@@ -2,8 +2,9 @@
 
 Mirrors how data/tracked/ reference statistics were built from the pro videos:
   - elbow angles: 2D angle, visibility >= 0.3, recovered from neighbouring frames, then the same row-level
-    QC as the pro data (low_vis / bone / frame / inconsistent). A flagged elbow is reported as unavailable
-    rather than graded, so a wrong pose does not turn into a wrong 'Needs Improvement'.
+    QC as the pro data (low_vis / bone / frame / inconsistent) plus a joint-jump check against the neighbouring
+    frames (qc_temporal; not applied to the pro reference, which has no per-frame series). A flagged elbow is
+    reported as unavailable rather than graded, so a wrong pose does not turn into a wrong 'Needs Improvement'.
   - tilts: event frame, visibility >= 0.5.
   - landmarks (for skeleton comparison images): event frame, visibility >= 0.5, like the static backend.
 Population-based outlier flags are not applied to a single user; z-score grading covers extreme values.
@@ -20,8 +21,10 @@ from pipeline.pose_tracking import (
     MAX_GAP,
     FrameJoints,
     apply_visibility,
+    arm_by_feature,
     extract_tracked_frames,
 )
+from pipeline.qc_temporal import JUMP_THRESHOLD, arm_jump
 from pipeline.qc_tracked_features import ARMS, arm_flags
 from pipeline.run_analysis import REQUIRED_FEATURES, video_frame_count
 
@@ -44,6 +47,12 @@ def _landmarks(frame: FrameJoints | None) -> dict[str, tuple[float, float, float
     return apply_visibility(points, LANDMARK_MIN_VISIBILITY)
 
 
+def _jump_flag(frames: Sequence[FrameJoints | None], frame_index: int, joints: Sequence[str]) -> bool:
+    """True when an arm joint leaps away from its neighbouring frames; unmeasurable counts as not flagged."""
+    jump = arm_jump(frames, frame_index, joints)
+    return jump is not None and jump > JUMP_THRESHOLD
+
+
 def build_user_events(
     frames: Sequence[FrameJoints | None],
     frame_indices: Sequence[int],
@@ -52,9 +61,14 @@ def build_user_events(
 ) -> list[dict[str, Any]]:
     """Per-event features/landmarks/QC; frame_indices index into `frames`."""
     rows = build_video_rows(0, frames, frame_indices, frame_size, handedness)
+    arms = arm_by_feature(handedness)
+    arm_joints = {"trail": arms["trail_elbow_angle"], "lead": arms["lead_elbow_angle"]}
     events = []
     for row, frame_index in zip(rows, frame_indices):
-        flags = {arm: arm_flags(row, arm) for arm in ARMS}
+        flags = {
+            arm: {**arm_flags(row, arm), "jump": _jump_flag(frames, frame_index, arm_joints[arm])}
+            for arm in ARMS
+        }
         features: dict[str, float | None] = {
             "shoulder_tilt": row["shoulder_tilt"],
             "hip_tilt": row["hip_tilt"],
