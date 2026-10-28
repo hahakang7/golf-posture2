@@ -19,9 +19,11 @@ from typing import Mapping, Sequence
 Joint = Sequence[float]  # (px, py, visibility, wx, wy, wz)
 Frame = Mapping[str, Joint]
 
-# Joint-jump threshold in torso lengths. Chosen leave-one-video-out against hand labels (qc_evaluate): picked
-# as 0.2 in all six folds; caught 8/12 wrong arms at 2 false alarms on 65 correct ones. Small sample.
-JUMP_THRESHOLD = 0.2
+# Joint-jump threshold in torso lengths. 0.2 was the leave-one-video-out pick on the 6 user videos (caught 8/12
+# wrong arms, 2 false alarms on 65 correct ones) but did not carry over to hand-labelled pro frames, where it
+# flagged 31% of correct arms (fast swings move joints a lot between frames). 0.3 flags 15.5% of correct pro
+# arms and catches 5/12 on the user videos. Chosen as the compromise; see qc_evaluate for the numbers.
+JUMP_THRESHOLD = 0.3
 # Elbow-angle floor in degrees, proposed before looking at any label results. On hand labels: no correct arm
 # below it among 123 (user 65 + pro 58); it caught 3 extra wrong pro arms. The collapsed/blurred poses it
 # targets measure 5-35 degrees, while the smallest correct elbow seen was ~50.
