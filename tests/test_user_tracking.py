@@ -107,6 +107,24 @@ class TestBuildUserEvents:
         assert event["qc"]["lead"]["jump"] is False
         assert event["features"]["lead_elbow_angle"] == pytest.approx(180.0)
 
+    def test_elbow_folded_below_the_floor_angle_becomes_unavailable(self):
+        folded = _frame()
+        # 2D and 3D agree on a ~16 degree elbow with plausible bone lengths, so only the floor rule can fire.
+        folded["RIGHT_WRIST"] = _joint(35, 22, 0.9, 0.1 + 0.07, 0.25 - 0.22, 0.0)
+
+        event = _events([folded], [0])[0]
+
+        assert event["qc"]["trail"]["low_angle"] is True
+        assert not any(flag for name, flag in event["qc"]["trail"].items() if name != "low_angle")
+        assert event["features"]["trail_elbow_angle"] is None
+        assert event["features"]["lead_elbow_angle"] == pytest.approx(180.0)
+
+    def test_ordinary_elbow_angles_are_not_flagged_by_the_floor(self):
+        event = _events([_frame()], [0])[0]
+
+        assert event["qc"]["trail"]["low_angle"] is False
+        assert event["qc"]["lead"]["low_angle"] is False
+
     def test_jump_cannot_be_measured_at_the_first_frame_so_nothing_is_flagged(self):
         event = _events([_frame(), _frame()], [0])[0]
 

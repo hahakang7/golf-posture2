@@ -22,6 +22,10 @@ Frame = Mapping[str, Joint]
 # Joint-jump threshold in torso lengths. Chosen leave-one-video-out against hand labels (qc_evaluate): picked
 # as 0.2 in all six folds; caught 8/12 wrong arms at 2 false alarms on 65 correct ones. Small sample.
 JUMP_THRESHOLD = 0.2
+# Elbow-angle floor in degrees, proposed before looking at any label results. On hand labels: no correct arm
+# below it among 123 (user 65 + pro 58); it caught 3 extra wrong pro arms. The collapsed/blurred poses it
+# targets measure 5-35 degrees, while the smallest correct elbow seen was ~50.
+ELBOW_ANGLE_FLOOR_DEG = 40.0
 MIN_NEIGHBOURS = 2
 TORSO_JOINTS = ("LEFT_SHOULDER", "RIGHT_SHOULDER", "LEFT_HIP", "RIGHT_HIP")
 

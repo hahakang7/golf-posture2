@@ -24,7 +24,7 @@ from pipeline.pose_tracking import (
     arm_by_feature,
     extract_tracked_frames,
 )
-from pipeline.qc_temporal import JUMP_THRESHOLD, arm_jump
+from pipeline.qc_temporal import ELBOW_ANGLE_FLOOR_DEG, JUMP_THRESHOLD, arm_jump, elbow_angle_floor
 from pipeline.qc_tracked_features import ARMS, arm_flags
 from pipeline.run_analysis import REQUIRED_FEATURES, video_frame_count
 
@@ -66,7 +66,11 @@ def build_user_events(
     events = []
     for row, frame_index in zip(rows, frame_indices):
         flags = {
-            arm: {**arm_flags(row, arm), "jump": _jump_flag(frames, frame_index, arm_joints[arm])}
+            arm: {
+                **arm_flags(row, arm),
+                "jump": _jump_flag(frames, frame_index, arm_joints[arm]),
+                "low_angle": elbow_angle_floor(row[f"{arm}_elbow_angle_2d"], ELBOW_ANGLE_FLOOR_DEG),
+            }
             for arm in ARMS
         }
         features: dict[str, float | None] = {
