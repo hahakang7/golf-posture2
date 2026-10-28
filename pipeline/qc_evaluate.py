@@ -107,6 +107,21 @@ def leave_one_group_out(
     return confusion(flags, bad)
 
 
+def fit_and_apply(
+    train: Sequence[Mapping[str, Any]],
+    test: Sequence[Mapping[str, Any]],
+    score_key: str,
+    candidates: Sequence[float],
+    direction: str,
+    false_alarm_cost: float = FALSE_ALARM_COST,
+) -> tuple[float, dict[str, int]]:
+    """Choose a threshold on `train` only and report how it performs, unchanged, on `test`."""
+    threshold = choose_threshold(
+        [row[score_key] for row in train], [row["bad"] for row in train], candidates, direction, false_alarm_cost
+    )
+    return threshold, confusion(_flags([row[score_key] for row in test], threshold, direction), [row["bad"] for row in test])
+
+
 def arm_rule_scores(
     window: Sequence[Mapping[str, Sequence[float]] | None],
     radius: int,
@@ -151,6 +166,36 @@ def load_windows(cache: Path, videos: Sequence[str], videos_dir: Path, results_d
     cache.parent.mkdir(parents=True, exist_ok=True)
     cache.write_text(json.dumps(data), encoding="utf-8")
     return data
+
+
+def load_pro_windows(
+    cache: Path, video_ids: Sequence[int], tracked_csv: Path, videos_dir: Path
+) -> dict[str, Any]:
+    """Like load_windows for pro videos; event frames come from the tracked feature table. Keys: 'pro<id>'."""
+    if cache.exists():
+        return json.loads(cache.read_text(encoding="utf-8"))
+    with tracked_csv.open(encoding="utf-8-sig", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    data = {}
+    for video_id in video_ids:
+        own = sorted((r for r in rows if int(r["video_id"]) == video_id), key=lambda r: int(r["event_index"]))
+        frames = [int(r["frame_index"]) for r in own]
+        windows = collect_windows(videos_dir / f"{video_id}.mp4", frames, WINDOW_RADIUS)
+        data[f"pro{video_id}"] = {"event_frames": frames, "windows": {str(f): w for f, w in windows.items()}}
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    cache.write_text(json.dumps(data), encoding="utf-8")
+    return data
+
+
+def load_pro_flags(qc_csv: Path) -> dict[tuple, bool]:
+    """Existing row-level QC result per (pro<id>, event, arm): any of its four flags set."""
+    flags = {}
+    with qc_csv.open(encoding="utf-8-sig", newline="") as handle:
+        for row in csv.DictReader(handle):
+            for arm in ("trail", "lead"):
+                hit = any(row[f"{arm}_flag_{name}"] == "True" for name in ("low_vis", "bone", "frame", "inconsistent"))
+                flags[(f"pro{row['video_id']}", int(row["event_index"]), arm)] = hit
+    return flags
 
 
 def build_rows(labels: Path, windows: Mapping[str, Any], flagged: Mapping[tuple, bool]) -> list[dict[str, Any]]:
@@ -222,6 +267,32 @@ def grid(rows: Sequence[dict[str, Any]], fraction: float) -> str:
     return "\n".join(lines)
 
 
+def external_report(user_rows: Sequence[dict[str, Any]], pro_rows: Sequence[dict[str, Any]], fraction: float) -> str:
+    """Thresholds fitted on the user-video arms only, applied unchanged to the pro-video arms."""
+    train, test = _usable(user_rows, fraction), _usable(pro_rows, fraction)
+    bad = [r["bad"] for r in test]
+    random_arms = [r for r in test if r.get("kind") == "random"]
+    lines = [
+        f"external validation (thresholds from user videos) on pro arms: {len(test)} evaluated, {sum(bad)} bad "
+        f"(hard-picked frames {sum(r['bad'] for r in test if r.get('kind') == 'hard')}, "
+        f"random frames {sum(r['bad'] for r in random_arms)})"
+    ]
+    fine_random = sum(not r["bad"] for r in random_arms)
+
+    def line(label: str, flags: list[bool]) -> str:
+        c = confusion(flags, bad)
+        random_fp = sum(f and not r["bad"] for f, r in zip(flags, test) if r.get("kind") == "random")
+        return (f"{label:22s} catch {_rate(c['tp'], sum(bad))}  false alarms {c['fp']}"
+                f"  (on random frames: {_rate(random_fp, fine_random)} of correct arms)")
+
+    lines.append(line("existing QC", [r["existing_flag"] for r in test]))
+    for name, (direction, candidates) in RULES.items():
+        threshold, _ = fit_and_apply(train, test, name, candidates, direction)
+        flags = _flags([r[name] for r in test], threshold, direction)
+        lines.append(line(f"{name} ({'<' if direction == 'low' else '>'} {threshold})", flags))
+    return "\n".join(lines)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--labels", type=Path, default=Path("tests/fixtures/human_arm_labels.json"))
@@ -229,8 +300,23 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--videos-dir", type=Path, default=Path("raw_videos"))
     parser.add_argument("--results-dir", type=Path, default=Path("documents/baseline_eval/2026-10-13"))
     parser.add_argument("--cache", type=Path, default=Path("outputs/qc_eval_windows.json"))
+    parser.add_argument("--pro-labels", type=Path, default=Path("tests/fixtures/human_arm_labels_pro.json"))
+    parser.add_argument("--pro-sample", type=Path, default=Path("tests/fixtures/pro_label_sample.json"))
+    parser.add_argument("--pro-tracked", type=Path, default=Path("data/pro_feature_raw_tracked.csv"))
+    parser.add_argument("--pro-qc", type=Path, default=Path("data/pro_feature_qc_tracked.csv"))
+    parser.add_argument("--pro-videos-dir", type=Path, default=Path("learning_video/golfdb_720p_slice"))
+    parser.add_argument("--pro-cache", type=Path, default=Path("outputs/qc_eval_windows_pro.json"))
     parser.add_argument("--grid", action="store_true", help="also print the full threshold grid")
     return parser.parse_args()
+
+
+def build_pro_rows(args: argparse.Namespace) -> list[dict[str, Any]]:
+    labels = json.loads(args.pro_labels.read_text(encoding="utf-8"))["tasks"]
+    ids = sorted({int(task["video"].removeprefix("pro")) for task in labels})
+    windows = load_pro_windows(args.pro_cache, ids, args.pro_tracked, args.pro_videos_dir)
+    kinds = {f"pro{p['video_id']}_{p['event_index']}": p["kind"] for p in json.loads(args.pro_sample.read_text(encoding="utf-8"))}
+    rows = build_rows(args.pro_labels, windows, load_pro_flags(args.pro_qc))
+    return [{**row, "group": "pro", "kind": kinds.get(row["id"])} for row in rows]
 
 
 def main() -> int:
@@ -239,7 +325,14 @@ def main() -> int:
     windows = load_windows(args.cache, videos, args.videos_dir, args.results_dir)
     rows = build_rows(args.labels, windows, load_existing_flags(args.verdicts))
     for fraction in SENSITIVITY_FRACTIONS:
+        print("USER VIDEOS (leave-one-video-out)")
         print(report(rows, fraction), "\n")
+    if args.pro_labels.exists():
+        pro_rows = build_pro_rows(args)
+        for fraction in SENSITIVITY_FRACTIONS:
+            print(external_report(rows, pro_rows, fraction), "\n")
+            print("COMBINED user + pro (pro is one group)")
+            print(report(rows + pro_rows, fraction), "\n")
     if args.grid:
         print(grid(rows, BAD_FRACTION))
     return 0

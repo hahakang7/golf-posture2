@@ -6,6 +6,7 @@ from pipeline.qc_evaluate import (
     arm_error_fraction,
     choose_threshold,
     confusion,
+    fit_and_apply,
     leave_one_group_out,
 )
 
@@ -82,3 +83,22 @@ class TestLeaveOneGroupOut:
         result = leave_one_group_out(rows, "score", [0.5], "high")
 
         assert result["fn"] == 1 and result["tp"] == 1
+
+
+class TestFitAndApply:
+    def test_threshold_is_fitted_on_train_and_applied_unchanged_to_test(self):
+        train = [{"score": 0.9, "bad": True}, {"score": 0.1, "bad": False}, {"score": 0.2, "bad": False}]
+        test = [{"score": 0.6, "bad": True}, {"score": 0.55, "bad": False}, {"score": 0.1, "bad": False}]
+
+        threshold, result = fit_and_apply(train, test, "score", [0.15, 0.5, 0.95], "high")
+
+        assert threshold == 0.5
+        assert result == {"tp": 1, "fp": 1, "fn": 0, "tn": 1}
+
+    def test_test_rows_never_influence_the_threshold(self):
+        train = [{"score": 0.9, "bad": True}, {"score": 0.4, "bad": False}, {"score": 0.1, "bad": False}]
+        test = [{"score": 0.4, "bad": True}] * 5  # would favour 0.3 if they were used for fitting
+
+        threshold, _ = fit_and_apply(train, test, "score", [0.3, 0.5], "high")
+
+        assert threshold == 0.5
