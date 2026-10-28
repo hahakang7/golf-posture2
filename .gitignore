@@ -53,6 +53,16 @@ data/pro_feature_qc_tracked.csv
 learning_video/
 
 # Analysis-only tools (not needed to run an evaluation)
+pipeline/arm_label_template.html
+pipeline/arm_label_tool.py
+pipeline/pro_label_sample.py
+pipeline/qc_evaluate.py
+pipeline/qc_review_sheet.py
+tests/fixtures/
+tests/test_arm_label_tool.py
+tests/test_pro_label_sample.py
+tests/test_qc_evaluate.py
+tests/test_qc_review_sheet.py
 pipeline/diagnose_clustering.py
 pipeline/export_tracked_stats_input.py
 tests/test_diagnose_clustering.py
